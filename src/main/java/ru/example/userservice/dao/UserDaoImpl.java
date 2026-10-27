@@ -2,13 +2,12 @@ package ru.example.userservice.dao;
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
-import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.example.userservice.exception.UserServiceException;
 import ru.example.userservice.model.User;
 import ru.example.userservice.util.HibernateUtil;
 
-import java.util.Collections;
 import java.util.List;
 
 public class UserDaoImpl implements UserDao {
@@ -22,12 +21,10 @@ public class UserDaoImpl implements UserDao {
             session.persist(user);
             transaction.commit();
             logger.info("Пользователь успешно сохранен: {}", user.getEmail());
-        } catch (ConstraintViolationException e) {
-            if (transaction != null) transaction.rollback();
-            logger.error("Ошибка уникальности: Пользователь с email {} уже существует", user.getEmail());
         } catch (Exception e) {
             if (transaction != null) transaction.rollback();
-            logger.error("Ошибка при сохранении пользователя", e);
+            logger.error("Ошибка при сохранении пользователя с email: {}", user.getEmail(), e);
+            throw new UserServiceException("Не удалось сохранить пользователя. Возможно, такой email уже зарегистрирован.", e);
         }
     }
 
@@ -36,8 +33,8 @@ public class UserDaoImpl implements UserDao {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.get(User.class, id);
         } catch (Exception e) {
-            logger.error("Ошибка при поиске пользователя по ID: {}", id, e);
-            return null;
+            logger.error("Ошибка БД при поиске пользователя по ID: {}", id, e);
+            throw new UserServiceException("Ошибка при обращении к базе данных. Попробуйте позже.", e);
         }
     }
 
@@ -46,8 +43,8 @@ public class UserDaoImpl implements UserDao {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery("from User", User.class).list();
         } catch (Exception e) {
-            logger.error("Ошибка при получении списка пользователей", e);
-            return Collections.emptyList();
+            logger.error("Ошибка БД при получении списка пользователей", e);
+            throw new UserServiceException("Не удалось загрузить список пользователей из-за сбоя БД.", e);
         }
     }
 
@@ -58,10 +55,11 @@ public class UserDaoImpl implements UserDao {
             transaction = session.beginTransaction();
             session.merge(user);
             transaction.commit();
-            logger.info("Данные пользователя обновлены: {}", user.getId());
+            logger.info("Данные пользователя обновлены, ID: {}", user.getId());
         } catch (Exception e) {
             if (transaction != null) transaction.rollback();
-            logger.error("Ошибка при обновлении пользователя с ID: {}", user.getId(), e);
+            logger.error("Ошибка БД при обновлении пользователя с ID: {}", user.getId(), e);
+            throw new UserServiceException("Не удалось обновить данные. Проверьте уникальность email и подключение к БД.", e);
         }
     }
 
@@ -74,13 +72,12 @@ public class UserDaoImpl implements UserDao {
             if (user != null) {
                 session.remove(user);
                 logger.info("Пользователь с ID {} удален", id);
-            } else {
-                logger.warn("Пользователь с ID {} не найден для удаления", id);
             }
             transaction.commit();
         } catch (Exception e) {
             if (transaction != null) transaction.rollback();
-            logger.error("Ошибка при удалении пользователя с ID: {}", id, e);
+            logger.error("Ошибка БД при удалении пользователя с ID: {}", id, e);
+            throw new UserServiceException("Не удалось удалить пользователя из-за внутренней ошибки БД.", e);
         }
     }
 }
