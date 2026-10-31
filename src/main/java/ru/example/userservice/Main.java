@@ -1,16 +1,18 @@
 package ru.example.userservice;
 
-import ru.example.userservice.dao.UserDao;
 import ru.example.userservice.dao.UserDaoImpl;
 import ru.example.userservice.exception.UserServiceException;
 import ru.example.userservice.model.User;
+import ru.example.userservice.service.UserService;
+import ru.example.userservice.service.UserServiceImpl;
 import ru.example.userservice.util.HibernateUtil;
 
 import java.util.List;
 import java.util.Scanner;
 
 public class Main {
-    private static final UserDao userDao = new UserDaoImpl();
+    // Внедряем UserDaoImpl внутрь UserServiceImpl (цепочка зависимостей)
+    private static final UserService userService = new UserServiceImpl(new UserDaoImpl());
     private static final Scanner scanner = new Scanner(System.in);
 
     public static void main(String[] args) {
@@ -97,7 +99,7 @@ public class Main {
 
         try {
             User user = new User(name, email, age);
-            userDao.save(user);
+            userService.createUser(user); // Вызываем сервис
             System.out.println("✅ Успех: Пользователь успешно создан!");
         } catch (UserServiceException e) {
             System.out.println("❌ Ошибка: " + e.getMessage());
@@ -109,7 +111,7 @@ public class Main {
         Long id = readLongSafe();
 
         try {
-            User user = userDao.findById(id);
+            User user = userService.getUserById(id); // Вызываем сервис
             if (user != null) {
                 System.out.println("👤 Результат поиска: " + user);
             } else {
@@ -122,7 +124,7 @@ public class Main {
 
     private static void readAllUsers() {
         try {
-            List<User> users = userDao.findAll();
+            List<User> users = userService.getAllUsers(); // Вызываем сервис
             if (users.isEmpty()) {
                 System.out.println("ℹ️ Информация: База данных пользователей пуста.");
             } else {
@@ -139,7 +141,7 @@ public class Main {
         Long id = readLongSafe();
 
         try {
-            User user = userDao.findById(id);
+            User user = userService.getUserById(id); // Вызываем сервис
             if (user == null) {
                 System.out.println("❌ Ошибка: Пользователь с ID " + id + " не найден.");
                 return;
@@ -157,10 +159,9 @@ public class Main {
             int age = readIntSafe();
             if (age != -1) user.setAge(age);
 
-            // Проверяем данные перед отправкой в БД
             if (!validateFields(user.getName(), user.getEmail(), user.getAge())) return;
 
-            userDao.update(user);
+            userService.updateUser(user); // Вызываем сервис
             System.out.println("✅ Успех: Данные пользователя успешно обновлены!");
         } catch (UserServiceException e) {
             System.out.println("❌ Ошибка: " + e.getMessage());
@@ -172,13 +173,13 @@ public class Main {
         Long id = readLongSafe();
 
         try {
-            User user = userDao.findById(id);
+            User user = userService.getUserById(id); // Вызываем сервис
             if (user == null) {
                 System.out.println("❌ Ошибка: Пользователь с ID " + id + " не существует.");
                 return;
             }
 
-            userDao.delete(id);
+            userService.deleteUser(id); // Вызываем сервис
             System.out.println("✅ Успех: Пользователь с ID " + id + " успешно удален.");
         } catch (UserServiceException e) {
             System.out.println("❌ Ошибка: " + e.getMessage());
