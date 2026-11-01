@@ -7,28 +7,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import ru.example.userservice.model.User;
 import ru.example.userservice.util.HibernateUtil;
 
 import java.lang.reflect.Field;
 import java.util.List;
 
-// Добавили правильный статический импорт для чистых ассертов
 import static org.junit.jupiter.api.Assertions.*;
 
-@Testcontainers
+// 1. МЫ УБРАЛИ аннотацию @Testcontainers сверху класса!
 class UserDaoIntegrationTest {
 
-    // Принудительно настраиваем свойства окружения для обхода проблем с Docker Desktop на Windows
-    static {
-        System.setProperty("DOCKER_HOST", "tcp://127.0.0.1:2375");
-        System.setProperty("TESTCONTAINERS_RYUK_DISABLED", "true");
-    }
-
-    // Автоматический запуск временной базы данных PostgreSQL в Docker
-    @Container
+    // 2. МЫ УБРАЛИ аннотацию @Container отсюда! Теперь управляем запуском вручную.
     private static final PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>("postgres:15-alpine")
             .withDatabaseName("test_db")
             .withUsername("test_user")
@@ -38,7 +28,15 @@ class UserDaoIntegrationTest {
 
     @BeforeAll
     static void beforeAll() throws Exception {
-        // Динамически перенастраиваем HibernateUtil на работу с временным контейнером вместо локальной БД
+        // ШАГ 1: Первым делом жестко прописываем порты Docker, пока ничего не запустилось
+        System.setProperty("DOCKER_HOST", "tcp://127.0.0.1:2375");
+        System.setProperty("TESTCONTAINERS_RYUK_DISABLED", "true");
+        System.setProperty("api.version", "1.44");
+
+        // ШАГ 2: Вручную запускаем контейнер. Теперь свойства DOCKER_HOST точно применятся!
+        postgresContainer.start();
+
+        // ШАГ 3: Настраиваем тестовый Hibernate на параметры запущенного контейнера
         Configuration configuration = new Configuration();
         configuration.setProperty("hibernate.connection.driver_class", postgresContainer.getDriverClassName());
         configuration.setProperty("hibernate.connection.url", postgresContainer.getJdbcUrl());
@@ -48,23 +46,26 @@ class UserDaoIntegrationTest {
         configuration.setProperty("hibernate.hbm2ddl.auto", "update");
         configuration.addAnnotatedClass(User.class);
 
-        // Используем рефлексию Java, чтобы подменить финальное поле фабрики в утилите
+        // ШАГ 4: Через рефлексию подменяем фабрику в HibernateUtil
         Field factoryField = HibernateUtil.class.getDeclaredField("sessionFactory");
         factoryField.setAccessible(true);
 
-        HibernateUtil.shutdown();
-        factoryField.set(null, configuration.buildSessionFactory());
+        HibernateUtil.shutdown(); // Сбрасываем старую (если была)
+        factoryField.set(null, configuration.buildSessionFactory()); // Записываем чистую тестовую фабрику
     }
 
     @AfterAll
     static void afterAll() {
         HibernateUtil.shutdown();
+        if (postgresContainer != null) {
+            postgresContainer.stop(); // Останавливаем контейнер вручную после всех тестов
+        }
     }
 
     @BeforeEach
     void setUp() {
         userDao = new UserDaoImpl();
-        // Обеспечиваем изоляцию тестов: полностью очищаем таблицу перед каждым тестом
+        // Полностью очищаем таблицу перед каждым тестом для изоляции
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
             session.createMutationQuery("delete from User").executeUpdate();
@@ -82,8 +83,6 @@ class UserDaoIntegrationTest {
 
         User savedUser = userDao.findById(user.getId());
         assertNotNull(savedUser);
-
-        // Теперь методы вызываются коротко и без ошибок компиляции
         assertEquals("Тест Контейнеров", savedUser.getName());
         assertEquals("container@test.com", savedUser.getEmail());
     }
